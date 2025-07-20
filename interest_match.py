@@ -15,17 +15,6 @@ RSS_BUCKET = "smart-434318-news-bbg-rss"
 RSS_FILE = "news_bbg_rss.csv"
 SENT_ARTICLES_FILE = "sent_articles.txt"
 
-# Mailgun configuration - now pulls domain from environment/secrets
-def get_mailgun_domain():
-    """Get Mailgun domain from Secret Manager"""
-    try:
-        domain = get_secret("MAILGUN_DOMAIN")
-        logging.info("Successfully retrieved Mailgun domain from Secret Manager")
-        return domain
-    except Exception as e:
-        logging.error(f"Error fetching MAILGUN_DOMAIN from Secret Manager: {e}")
-        return None
-
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +28,17 @@ def get_secret(secret_id, project_id=PROJECT_ID):
     name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
     response = client.access_secret_version(request={"name": name})
     return response.payload.data.decode("UTF-8")
+
+# Mailgun configuration - now pulls domain from environment/secrets
+def get_mailgun_domain():
+    """Get Mailgun domain from Secret Manager"""
+    try:
+        domain = get_secret("MAILGUN_DOMAIN")
+        logging.info("Successfully retrieved Mailgun domain from Secret Manager")
+        return domain
+    except Exception as e:
+        logging.error(f"Error fetching MAILGUN_DOMAIN from Secret Manager: {e}")
+        return None
 
 # Fetch Google Application Credentials from Secret Manager
 def get_google_credentials():
@@ -60,6 +60,7 @@ def read_csv_from_gcs(bucket_name, blob_name):
     content = blob.download_as_text()
     csv_reader = csv.DictReader(content.splitlines())
     return list(csv_reader)
+
 def filter_articles_by_css(articles, threshold=0.615):
     filtered_articles = []
     for article in articles:
