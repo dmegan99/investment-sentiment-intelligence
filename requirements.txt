@@ -18,8 +18,9 @@ google-auth>=2.16.0,<3.0.0
 google-api-python-client>=2.70.0,<3.0.0
 google-resumable-media>=2.4.0,<3.0.0
 
-# Email
-sendgrid>=6.9.0
+# Email (updated to use requests for Mailgun API)
+# sendgrid>=6.9.0  # Removed - replaced with Mailgun
+# requests>=2.28.0 already included above for Mailgun API calls
 
 # Machine learning for embeddings
 scikit-learn>=1.1.0,<2.0.0

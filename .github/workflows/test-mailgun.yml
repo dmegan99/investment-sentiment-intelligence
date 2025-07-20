@@ -1,0 +1,41 @@
+name: Test Mailgun Migration
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  test_mailgun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests google-cloud-secretmanager
+    
+    - name: Set up Google Cloud credentials
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CLOUD_KEY }}
+      run: |
+        echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/gcp-key.json
+        echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
+    
+    - name: Test Mailgun Migration
+      run: |
+        python test_mailgun_migration.py
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+    
+    - name: Clean up credentials
+      if: always()
+      run: |
+        rm -f /tmp/gcp-key.json
