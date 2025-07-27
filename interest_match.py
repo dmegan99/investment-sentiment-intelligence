@@ -16,16 +16,23 @@ RSS_BUCKET = "smart-434318-news-bbg-rss"
 RSS_FILE = "news_bbg_rss.csv"
 SENT_ARTICLES_FILE = "sent_articles.txt"
 
+# FORCE PRINT TO ENSURE WE SEE OUTPUT
+print("=" * 80)
+print("🚀 INTEREST_MATCH.PY STARTING - FORCE PRINT TEST")
+print("=" * 80)
+sys.stdout.flush()
+
 # Enhanced logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', force=True)
 logger = logging.getLogger(__name__)
 
 # Set up logging
 logging.getLogger('google.cloud.storage').setLevel(logging.WARNING)
 
 def debug_print(message):
-    """Print to both stdout and logger for better visibility"""
+    """Force print to both stdout and logger for maximum visibility"""
     print(f"🔍 DEBUG: {message}")
+    sys.stdout.flush()
     logger.info(f"DEBUG: {message}")
 
 # Function to fetch secrets from Google Secret Manager
@@ -58,7 +65,9 @@ def initialize_gcs_client():
     return storage.Client.from_service_account_info(credentials)
 
 # Initialize Google Cloud Storage client
+debug_print("Initializing Google Cloud Storage client...")
 storage_client = initialize_gcs_client()
+debug_print("Google Cloud Storage client initialized successfully")
 
 def read_csv_from_gcs(bucket_name, blob_name):
     debug_print(f"Reading CSV from GCS: {bucket_name}/{blob_name}")
@@ -73,22 +82,26 @@ def read_csv_from_gcs(bucket_name, blob_name):
 def filter_articles_by_css(articles, threshold=0.615):
     debug_print(f"Filtering {len(articles)} articles with CSS threshold {threshold}")
     filtered_articles = []
+    high_score_count = 0
+    
     for article in articles:
         try:
             css_value = article.get('CSS')
             # Check for None explicitly before empty string
             if css_value is None or css_value == '':
                 debug_print(f"Article with empty CSS value: {article.get('Title', 'Unknown Title')}")
-                filtered_articles.append((article, 0.0))  # Assign 0.0 as CSS score for empty values
+                # Don't add articles with no CSS score to filtered list
             else:
                 css_score = float(css_value)
                 if css_score >= threshold:
                     filtered_articles.append((article, css_score))
-                    debug_print(f"Article above threshold: {css_score:.3f} - {article.get('Title', '')[:50]}...")
+                    high_score_count += 1
+                    if high_score_count <= 5:  # Show first 5 high-scoring articles
+                        debug_print(f"High CSS article {high_score_count}: {css_score:.3f} - {article.get('Title', '')[:50]}...")
         except (ValueError, KeyError) as e:
             debug_print(f"Invalid CSS value for article: {article.get('Title', 'Unknown Title')}. Error: {str(e)}")
     
-    debug_print(f"Found {len(filtered_articles)} articles above CSS threshold")
+    debug_print(f"Found {len(filtered_articles)} articles above CSS threshold {threshold}")
     return filtered_articles
 
 def parse_date(date_string):
@@ -351,5 +364,11 @@ def main():
         debug_print(f"💥 Full traceback: {traceback.format_exc()}")
         sys.exit(1)
 
+print("🔍 About to call main() function...")
+sys.stdout.flush()
+
 if __name__ == "__main__":
     main()
+
+print("🔍 main() function completed")
+sys.stdout.flush()
