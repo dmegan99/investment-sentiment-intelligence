@@ -5,6 +5,7 @@ import json
 import logging
 import time 
 import requests
+import sys
 from datetime import datetime, timedelta
 from pytz import timezone
 from google.cloud import storage, secretmanager
@@ -15,12 +16,17 @@ RSS_BUCKET = "smart-434318-news-bbg-rss"
 RSS_FILE = "news_bbg_rss.csv"
 SENT_ARTICLES_FILE = "sent_articles.txt"
 
-# Logging configuration
-logging.basicConfig(level=logging.INFO)
+# Enhanced logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Set up logging
 logging.getLogger('google.cloud.storage').setLevel(logging.WARNING)
+
+def debug_print(message):
+    """Print to both stdout and logger for better visibility"""
+    print(f"🔍 DEBUG: {message}")
+    logger.info(f"DEBUG: {message}")
 
 # Function to fetch secrets from Google Secret Manager
 def get_secret(secret_id, project_id=PROJECT_ID):
@@ -34,10 +40,10 @@ def get_mailgun_domain():
     """Get Mailgun domain from Secret Manager"""
     try:
         domain = get_secret("MAILGUN_DOMAIN")
-        logging.info("Successfully retrieved Mailgun domain from Secret Manager")
+        debug_print(f"Successfully retrieved Mailgun domain: {domain}")
         return domain
     except Exception as e:
-        logging.error(f"Error fetching MAILGUN_DOMAIN from Secret Manager: {e}")
+        debug_print(f"Error fetching MAILGUN_DOMAIN from Secret Manager: {e}")
         return None
 
 # Fetch Google Application Credentials from Secret Manager
@@ -55,27 +61,34 @@ def initialize_gcs_client():
 storage_client = initialize_gcs_client()
 
 def read_csv_from_gcs(bucket_name, blob_name):
+    debug_print(f"Reading CSV from GCS: {bucket_name}/{blob_name}")
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
     content = blob.download_as_text()
     csv_reader = csv.DictReader(content.splitlines())
-    return list(csv_reader)
+    articles = list(csv_reader)
+    debug_print(f"Successfully read {len(articles)} articles from CSV")
+    return articles
 
 def filter_articles_by_css(articles, threshold=0.615):
+    debug_print(f"Filtering {len(articles)} articles with CSS threshold {threshold}")
     filtered_articles = []
     for article in articles:
         try:
             css_value = article.get('CSS')
             # Check for None explicitly before empty string
             if css_value is None or css_value == '':
-                logging.info(f"Article with empty CSS value: {article.get('Title', 'Unknown Title')}")
+                debug_print(f"Article with empty CSS value: {article.get('Title', 'Unknown Title')}")
                 filtered_articles.append((article, 0.0))  # Assign 0.0 as CSS score for empty values
             else:
                 css_score = float(css_value)
                 if css_score >= threshold:
                     filtered_articles.append((article, css_score))
+                    debug_print(f"Article above threshold: {css_score:.3f} - {article.get('Title', '')[:50]}...")
         except (ValueError, KeyError) as e:
-            logging.warning(f"Invalid CSS value for article: {article.get('Title', 'Unknown Title')}. Error: {str(e)}")
+            debug_print(f"Invalid CSS value for article: {article.get('Title', 'Unknown Title')}. Error: {str(e)}")
+    
+    debug_print(f"Found {len(filtered_articles)} articles above CSS threshold")
     return filtered_articles
 
 def parse_date(date_string):
@@ -100,7 +113,7 @@ def parse_date(date_string):
                 dt = dt.replace(tzinfo=utc)
             return dt
     except (ValueError, IndexError) as e:
-        logging.warning(f"Error parsing TrendForce date: {e}")
+        debug_print(f"Error parsing TrendForce date: {e}")
     
     # Try regular date formats
     date_formats = [
@@ -127,7 +140,7 @@ def parse_date(date_string):
         from dateutil import parser
         return parser.parse(date_string).replace(tzinfo=utc)
     except Exception:
-        logging.warning(f"Unable to parse date: {date_string}")
+        debug_print(f"Unable to parse date: {date_string}")
         return None
 
 def is_within_last_48_hours(published_at):
@@ -153,31 +166,38 @@ def is_within_last_48_hours(published_at):
     return time_diff <= timedelta(hours=48)
 
 def get_sent_articles():
+    debug_print("Checking for previously sent articles")
     bucket = storage_client.bucket(RSS_BUCKET)
     blob = bucket.blob(SENT_ARTICLES_FILE)
     if not blob.exists():
+        debug_print("No previous sent articles file found")
         return set()
     content = blob.download_as_text()
-    return set(content.splitlines())
+    sent_articles = set(content.splitlines())
+    debug_print(f"Found {len(sent_articles)} previously sent articles")
+    return sent_articles
 
 def update_sent_articles(new_articles):
+    debug_print(f"Updating sent articles with {len(new_articles)} new URLs")
     bucket = storage_client.bucket(RSS_BUCKET)
     blob = bucket.blob(SENT_ARTICLES_FILE)
     current_sent = get_sent_articles()
     updated_sent = current_sent.union(new_articles)
     blob.upload_from_string('\n'.join(updated_sent))
+    debug_print(f"Updated sent articles file. Total: {len(updated_sent)} articles")
 
 # Fetch Mailgun API key from Secret Manager
 def get_mailgun_api_key():
     try:
         api_key = get_secret("MAILGUN_API_KEY")
-        logging.info("Successfully retrieved Mailgun API key from Secret Manager")
+        debug_print(f"Successfully retrieved Mailgun API key (length: {len(api_key)})")
         return api_key
     except Exception as e:
-        logging.error(f"Error fetching MAILGUN_API_KEY from Secret Manager: {e}")
+        debug_print(f"Error fetching MAILGUN_API_KEY from Secret Manager: {e}")
         return None
 
 def generate_email_content(articles):
+    debug_print(f"Generating email content for {len(articles)} articles")
     html_content = """
     <html>
     <body>
@@ -215,19 +235,22 @@ def generate_email_content(articles):
     return html_content
 
 def send_email_notification(matched_articles):
+    debug_print(f"🚀 STARTING EMAIL NOTIFICATION for {len(matched_articles)} articles")
+    
     mailgun_api_key = get_mailgun_api_key()
     mailgun_domain = get_mailgun_domain()
 
     if not mailgun_api_key:
-        logger.error("Mailgun API key not found.")
-        return
+        debug_print("❌ CRITICAL: Mailgun API key not found!")
+        return False
         
     if not mailgun_domain:
-        logger.error("Mailgun domain not found.")
-        return
+        debug_print("❌ CRITICAL: Mailgun domain not found!")
+        return False
     
     # Build the API URL dynamically
     mailgun_api_url = f"https://api.mailgun.net/v3/{mailgun_domain}/messages"
+    debug_print(f"📧 Mailgun API URL: {mailgun_api_url}")
 
     # Use the sender name you specified
     from_email = f'Dave\'s News Intelligence <news@{mailgun_domain}>'
@@ -237,7 +260,11 @@ def send_email_notification(matched_articles):
     timestamp = ny_time.strftime('%Y-%m-%d %I:%M %p')
     
     email_content = generate_email_content(matched_articles)
+    debug_print(f"📧 From: {from_email}")
+    debug_print(f"📧 Subject: Matches {timestamp}")
+    debug_print(f"📧 Recipients: {to_emails}")
 
+    email_sent = False
     for to_email in to_emails:
         # Prepare the data for Mailgun API
         data = {
@@ -248,56 +275,81 @@ def send_email_notification(matched_articles):
         }
 
         try:
-            logger.info(f"Attempting to send email to {to_email}...")
+            debug_print(f"📤 Attempting to send email to {to_email}...")
             response = requests.post(
                 mailgun_api_url,
                 auth=('api', mailgun_api_key),
                 data=data
             )
             
+            debug_print(f"📧 Response status code: {response.status_code}")
+            debug_print(f"📧 Response text: {response.text}")
+            
             if response.status_code == 200:
-                logger.info(f"Email sent to {to_email}. Status code: {response.status_code}")
-                logger.info(f"Mailgun response: {response.json()}")
+                debug_print(f"✅ Email sent successfully to {to_email}")
+                debug_print(f"📧 Mailgun response: {response.json()}")
+                email_sent = True
             else:
-                logger.error(f"Failed to send email to {to_email}. Status code: {response.status_code}")
-                logger.error(f"Response: {response.text}")
+                debug_print(f"❌ Failed to send email to {to_email}. Status: {response.status_code}")
+                debug_print(f"❌ Response: {response.text}")
             
             time.sleep(1)  # Add 1 second delay between sends to avoid rate limiting
             
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
+            debug_print(f"❌ Exception sending email to {to_email}: {str(e)}")
             time.sleep(5)  # Add longer delay if there's an error
 
+    return email_sent
 
 def main():
-    logging.info("Starting article matching and email notification process")
+    debug_print("🚀 STARTING article matching and email notification process")
+    
+    try:
+        # Read and parse the CSV file
+        debug_print("📖 Step 1: Reading articles from CSV")
+        articles = read_csv_from_gcs(RSS_BUCKET, RSS_FILE)
+        debug_print(f"📊 Read {len(articles)} total articles from CSV")
 
-    # Read and parse the CSV file
-    articles = read_csv_from_gcs(RSS_BUCKET, RSS_FILE)
-    logging.info(f"Read {len(articles)} articles from CSV")
+        # Filter articles based on CSS threshold
+        debug_print("🔍 Step 2: Filtering articles by CSS threshold")
+        css_filtered_articles = filter_articles_by_css(articles)
+        debug_print(f"📊 Found {len(css_filtered_articles)} articles matching the CSS threshold")
 
-    # Filter articles based on CSS threshold
-    css_filtered_articles = filter_articles_by_css(articles)
-    logging.info(f"Found {len(css_filtered_articles)} articles matching the CSS threshold")
+        # Filter articles based on publication date and not previously sent
+        debug_print("⏰ Step 3: Filtering by date and sent status")
+        sent_articles = get_sent_articles()
+        matched_articles = [
+            (article, css_score) for article, css_score in css_filtered_articles
+            if is_within_last_48_hours(article['Published At']) and article['URL'] not in sent_articles
+        ]
+        debug_print(f"📊 Found {len(matched_articles)} articles within last 48 hours and not previously sent")
 
-    # Filter articles based on publication date and not previously sent
-    sent_articles = get_sent_articles()
-    matched_articles = [
-        (article, css_score) for article, css_score in css_filtered_articles
-        if is_within_last_48_hours(article['Published At']) and article['URL'] not in sent_articles
-    ]
-    logging.info(f"Found {len(matched_articles)} articles within last 48 hours and not previously sent")
+        # Sort matched articles by CSS score (highest to lowest)
+        matched_articles.sort(key=lambda x: x[1], reverse=True)
 
-    # Sort matched articles by CSS score (highest to lowest)
-    matched_articles.sort(key=lambda x: x[1], reverse=True)
+        if matched_articles:
+            debug_print(f"📧 Step 4: Sending emails for {len(matched_articles)} matched articles")
+            # Show top articles
+            for i, (article, css_score) in enumerate(matched_articles[:5]):
+                debug_print(f"📰 Top article {i+1}: {css_score:.3f} - {article.get('Title', '')[:60]}...")
+            
+            email_sent = send_email_notification(matched_articles)
+            if email_sent:
+                debug_print("✅ Emails sent successfully, updating sent articles list")
+                update_sent_articles([article['URL'] for article, _ in matched_articles])
+            else:
+                debug_print("❌ No emails were sent successfully")
+        else:
+            debug_print("❌ No new matched articles found. Skipping email notification.")
+            debug_print(f"📊 Summary: {len(articles)} total → {len(css_filtered_articles)} above threshold → {len(matched_articles)} final matches")
 
-    if matched_articles:
-        send_email_notification(matched_articles)
-        update_sent_articles([article['URL'] for article, _ in matched_articles])
-    else:
-        logging.info("No new matched articles found. Skipping email notification.")
-
-    logging.info("Article matching and email notification process completed")
+        debug_print("✅ Article matching and email notification process completed")
+        
+    except Exception as e:
+        debug_print(f"💥 CRITICAL ERROR in main(): {str(e)}")
+        import traceback
+        debug_print(f"💥 Full traceback: {traceback.format_exc()}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
