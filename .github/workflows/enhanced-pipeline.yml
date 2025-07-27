@@ -31,7 +31,18 @@ jobs:
       env:
         GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CLOUD_KEY }}
       run: |
+        echo "Setting up Google Cloud credentials..."
         echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/gcp-key.json
+        
+        # Validate the JSON file
+        if ! python -m json.tool /tmp/gcp-key.json > /dev/null 2>&1; then
+          echo "❌ ERROR: GOOGLE_CLOUD_KEY secret is not valid JSON"
+          echo "First few characters of the secret:"
+          head -c 100 /tmp/gcp-key.json
+          exit 1
+        fi
+        
+        echo "✅ Google Cloud credentials JSON is valid"
         echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
     
     - name: Run News Intelligence Pipeline
@@ -77,7 +88,18 @@ jobs:
       env:
         GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CLOUD_KEY }}
       run: |
+        echo "Setting up Google Cloud credentials..."
         echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/gcp-key.json
+        
+        # Validate the JSON file
+        if ! python -m json.tool /tmp/gcp-key.json > /dev/null 2>&1; then
+          echo "❌ ERROR: GOOGLE_CLOUD_KEY secret is not valid JSON"
+          echo "First few characters of the secret:"
+          head -c 100 /tmp/gcp-key.json
+          exit 1
+        fi
+        
+        echo "✅ Google Cloud credentials JSON is valid"
         echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
     
     - name: Run Enhanced Sentiment Analysis Pipeline
