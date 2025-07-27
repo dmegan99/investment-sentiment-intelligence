@@ -28,10 +28,9 @@ def run_script(script_name, description):
     start_time = time.time()
     
     try:
-        # Run the script
+        # Run the script WITHOUT capturing output so we can see debug logs in real-time
         result = subprocess.run(
             [sys.executable, script_name],
-            capture_output=True,
             text=True,
             timeout=1800  # 30 minute timeout
         )
@@ -40,12 +39,10 @@ def run_script(script_name, description):
         
         if result.returncode == 0:
             logging.info(f"✅ Completed: {description} ({duration:.1f}s)")
-            if result.stdout:
-                logging.info(f"Output: {result.stdout}")
             return True
         else:
             logging.error(f"❌ Failed: {description}")
-            logging.error(f"Error: {result.stderr}")
+            logging.error(f"Return code: {result.returncode}")
             return False
             
     except subprocess.TimeoutExpired:
@@ -92,8 +89,8 @@ def main():
     logging.info(f"   • Successful steps: {successful_steps}/{total_steps}")
     
     for script, success in results:
-        status = "✅" if success else "❌"
-        logging.info(f"   • {status} {script}")
+        status = "✅ PASS" if success else "❌ FAIL"
+        logging.info(f"   • {description}: {status}")
     
     if successful_steps == len(pipeline_steps):
         logging.info("🎉 Pipeline completed successfully!")
